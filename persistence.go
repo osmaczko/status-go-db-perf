@@ -2,10 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 
-	_ "github.com/mutecomm/go-sqlcipher" // We require go sqlcipher that overrides default implementation
+	sqlcipher "github.com/mutecomm/go-sqlcipher" // We require go sqlcipher that overrides default implementation
 )
 
 const (
@@ -39,19 +40,29 @@ func openDB(path string, key string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Disable concurrent access as not supported by the driver
-	db.SetMaxOpenConns(1)
-
-	if _, err = db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		return nil, err
+	// Workaround: casting the driver type breaks the database/sql abstraction
+	// and may lead to compatibility issues in the future.
+	// This method is used because the 'database/sql' package does not expose 'ConnectHook',
+	// thereby making it impossible to individually configure each connection.
+	// Consequently, the connections from the pool can't be properly decrypted, making them unusable.
+	sqlcipherDriver, ok := db.Driver().(*sqlcipher.SQLiteDriver)
+	if !ok {
+		return nil, fmt.Errorf("unable to get sqlcipher driver")
 	}
-	keyString := fmt.Sprintf("PRAGMA key = '%s'", key)
-	if _, err = db.Exec(keyString); err != nil {
-		return nil, errors.New("failed to set key pragma")
-	}
+	sqlcipherDriver.ConnectHook = func(conn *sqlcipher.SQLiteConn) error {
+		if _, err = conn.Exec("PRAGMA foreign_keys=ON", []driver.Value{}); err != nil {
+			return err
+		}
+		keyString := fmt.Sprintf("PRAGMA key = '%s'", key)
+		if _, err = conn.Exec(keyString, []driver.Value{}); err != nil {
+			return errors.New("failed to set key pragma")
+		}
 
-	if _, err = db.Exec(fmt.Sprintf("PRAGMA kdf_iter = '%d'", KdfIterationsNumber)); err != nil {
-		return nil, err
+		if _, err = conn.Exec(fmt.Sprintf("PRAGMA kdf_iter = '%d'", KdfIterationsNumber), []driver.Value{}); err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	// readers do not block writers and faster i/o operations
