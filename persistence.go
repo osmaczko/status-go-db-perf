@@ -29,7 +29,7 @@ func NewPersistence(path string, key string) (*Persistence, error) {
 	}, err
 }
 
-func (p *Persistence) Close() {
+func (p *Persistence) Cleanup() {
 	p.db.Close()
 }
 

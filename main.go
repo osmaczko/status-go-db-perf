@@ -52,9 +52,16 @@ func main() {
 		log.Println(err)
 		return
 	}
-	defer persistence.Close()
+	defer persistence.Cleanup()
 
-	ids, err := persistence.QueryUnseenMessages()
+	profiler, err := NewPersistenceProfiler(persistence)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer profiler.Cleanup()
+
+	ids, err := profiler.QueryUnseenMessages()
 	if err != nil {
 		log.Println(err)
 		return
