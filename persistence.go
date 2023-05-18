@@ -16,6 +16,8 @@ const (
 	KdfIterationsNumber = 256000
 )
 
+var insertMessageIdx = 0
+
 type Persistence struct {
 	db *sql.DB
 }
@@ -88,4 +90,13 @@ func (p *Persistence) QueryUnseenMessages() ([]string, error) {
 	}
 
 	return ids, nil
+}
+
+func (p *Persistence) InsertUnseenMessage() error {
+	id := fmt.Sprintf("msg-%d", insertMessageIdx)
+	if _, err := p.db.Exec("INSERT INTO user_messages (id, seen) VALUES (?, ?)", id, 0); err != nil {
+		return err
+	}
+	insertMessageIdx++
+	return nil
 }
