@@ -94,9 +94,18 @@ func (p *Persistence) QueryUnseenMessages() ([]string, error) {
 
 func (p *Persistence) InsertUnseenMessage() error {
 	id := fmt.Sprintf("msg-%d", insertMessageIdx)
-	if _, err := p.db.Exec("INSERT INTO user_messages (id, seen) VALUES (?, ?)", id, 0); err != nil {
+
+	query := `
+	INSERT INTO user_messages (
+		id, whisper_timestamp, source, text, content_type,
+		timestamp, chat_id, local_chat_id, clock_value, seen,
+		replace_message, rtl, line_count, image_base64, audio_base64
+	) VALUES (?, 0, "", "", 0, 0, "", "", 0, ?, "", 0, 0, "", "")`
+
+	if _, err := p.db.Exec(query, id, false); err != nil {
 		return err
 	}
+
 	insertMessageIdx++
 	return nil
 }

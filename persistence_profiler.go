@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -27,7 +29,55 @@ func (pp *PersistenceProfiler) Cleanup() {
 	pp.csvFile.Close()
 }
 
-func (pp *PersistenceProfiler) QueryUnseenMessages() ([]string, error) {
+func (pp *PersistenceProfiler) Perform() error {
+	// log exclusive query
+	if _, err := pp.queryUnseenMessages(); err != nil {
+		return err
+	}
+
+	// log exclusive insert
+	if err := pp.insertUnseenMessage(); err != nil {
+		return err
+	}
+
+	// log concurrent reading and writing
+	wg := sync.WaitGroup{}
+	errCh := make(chan error)
+	go func() {
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if _, err := pp.queryUnseenMessages(); err != nil {
+					errCh <- err
+				}
+			}()
+		}
+
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := pp.insertUnseenMessage(); err != nil {
+					errCh <- err
+				}
+			}()
+		}
+
+		wg.Wait()
+		close(errCh)
+	}()
+
+	for err := range errCh {
+		if err != nil {
+			return err // return on first error
+		}
+	}
+
+	return nil
+}
+
+func (pp *PersistenceProfiler) queryUnseenMessages() ([]string, error) {
 	logger := PerfLogger{
 		csvFile: pp.csvFile,
 		apiName: "QueryUnseenMessages",
@@ -37,7 +87,7 @@ func (pp *PersistenceProfiler) QueryUnseenMessages() ([]string, error) {
 	return pp.p.QueryUnseenMessages()
 }
 
-func (pp *PersistenceProfiler) InsertUnseenMessage() error {
+func (pp *PersistenceProfiler) insertUnseenMessage() error {
 	logger := PerfLogger{
 		csvFile: pp.csvFile,
 		apiName: "InsertUnseenMessage",
@@ -58,6 +108,6 @@ func (pf *PerfLogger) Complete() {
 
 	line := fmt.Sprintf("%sµ%d\n", pf.apiName, duration.Nanoseconds())
 	if _, err := pf.csvFile.Write([]byte(line)); err != nil {
-		fmt.Println("could not write to csv", err)
+		log.Println("could not write to csv", err)
 	}
 }

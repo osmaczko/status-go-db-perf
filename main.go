@@ -61,11 +61,8 @@ func main() {
 	}
 	defer profiler.Cleanup()
 
-	ids, err := profiler.QueryUnseenMessages()
-	if err != nil {
+	if err := profiler.Perform(); err != nil {
 		log.Println(err)
 		return
 	}
-
-	log.Println(ids)
 }
