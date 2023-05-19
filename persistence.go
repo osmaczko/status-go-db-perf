@@ -5,6 +5,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"log"
+	"sync/atomic"
 
 	sqlcipher "github.com/mutecomm/go-sqlcipher" // We require go sqlcipher that overrides default implementation
 )
@@ -18,6 +20,7 @@ const (
 )
 
 var insertMessageIdx = 0
+var connectionsIdx int32
 
 type Persistence struct {
 	db *sql.DB
@@ -51,17 +54,21 @@ func openDB(path string, key string) (*sql.DB, error) {
 	}
 	sqlcipherDriver.ConnectHook = func(conn *sqlcipher.SQLiteConn) error {
 		if _, err = conn.Exec("PRAGMA foreign_keys=ON", []driver.Value{}); err != nil {
+			log.Println("Connection setup FAILED")
 			return err
 		}
 		keyString := fmt.Sprintf("PRAGMA key = '%s'", key)
 		if _, err = conn.Exec(keyString, []driver.Value{}); err != nil {
+			log.Println("Connection setup FAILED")
 			return errors.New("failed to set key pragma")
 		}
 
 		if _, err = conn.Exec(fmt.Sprintf("PRAGMA kdf_iter = '%d'", KdfIterationsNumber), []driver.Value{}); err != nil {
+			log.Println("Connection setup FAILED")
 			return err
 		}
 
+		log.Println("Connection setup: ", atomic.AddInt32(&connectionsIdx, 1))
 		return nil
 	}
 
