@@ -68,20 +68,20 @@ func openDB(path string, key string) (*sql.DB, error) {
 			return err
 		}
 
+		// readers do not block writers and faster i/o operations
+		if _, err = conn.Exec("PRAGMA journal_mode=WAL", []driver.Value{}); err != nil {
+			log.Println("Connection setup FAILED")
+			return err
+		}
+
+		// workaround to mitigate the issue of "database is locked" errors during concurrent write operations
+		if _, err = conn.Exec("PRAGMA busy_timeout=60000", []driver.Value{}); err != nil {
+			log.Println("Connection setup FAILED")
+			return err
+		}
+
 		log.Println("Connection setup: ", atomic.AddInt32(&connectionsIdx, 1))
 		return nil
-	}
-
-	// readers do not block writers and faster i/o operations
-	// https://www.sqlite.org/draft/wal.html
-	// must be set after db is encrypted
-	var mode string
-	err = db.QueryRow("PRAGMA journal_mode=WAL").Scan(&mode)
-	if err != nil {
-		return nil, err
-	}
-	if mode != WALMode && path != InMemoryPath {
-		return nil, fmt.Errorf("unable to set journal_mode to WAL. actual mode %s", mode)
 	}
 
 	return db, nil
