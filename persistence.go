@@ -35,48 +35,42 @@ func (p *Persistence) Cleanup() {
 }
 
 func openDB(path string, key string, maxOpenConns int, maxIdleConns int) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", path)
+	driverName := fmt.Sprintf("sqlcipher_with_extensions-%d", len(sql.Drivers()))
+	sql.Register(driverName, &sqlcipher.SQLiteDriver{
+		ConnectHook: func(conn *sqlcipher.SQLiteConn) error {
+			if _, err := conn.Exec("PRAGMA foreign_keys=ON", []driver.Value{}); err != nil {
+				return err
+			}
+			keyString := fmt.Sprintf("PRAGMA key = '%s'", key)
+			if _, err := conn.Exec(keyString, []driver.Value{}); err != nil {
+				return errors.New("failed to set key pragma")
+			}
+
+			if _, err := conn.Exec(fmt.Sprintf("PRAGMA kdf_iter = '%d'", KdfIterationsNumber), []driver.Value{}); err != nil {
+				return err
+			}
+
+			// readers do not block writers and faster i/o operations
+			if _, err := conn.Exec("PRAGMA journal_mode=WAL", []driver.Value{}); err != nil {
+				return err
+			}
+
+			// workaround to mitigate the issue of "database is locked" errors during concurrent write operations
+			if _, err := conn.Exec("PRAGMA busy_timeout=60000", []driver.Value{}); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	})
+
+	db, err := sql.Open(driverName, path)
 	if err != nil {
 		return nil, err
 	}
 
 	db.SetMaxOpenConns(maxOpenConns)
 	db.SetMaxIdleConns(maxIdleConns)
-
-	// Workaround: casting the driver type breaks the database/sql abstraction
-	// and may lead to compatibility issues in the future.
-	// This method is used because the 'database/sql' package does not expose 'ConnectHook',
-	// thereby making it impossible to individually configure each connection.
-	// Consequently, the connections from the pool can't be properly decrypted, making them unusable.
-	sqlcipherDriver, ok := db.Driver().(*sqlcipher.SQLiteDriver)
-	if !ok {
-		return nil, fmt.Errorf("unable to get sqlcipher driver")
-	}
-	sqlcipherDriver.ConnectHook = func(conn *sqlcipher.SQLiteConn) error {
-		if _, err = conn.Exec("PRAGMA foreign_keys=ON", []driver.Value{}); err != nil {
-			return err
-		}
-		keyString := fmt.Sprintf("PRAGMA key = '%s'", key)
-		if _, err = conn.Exec(keyString, []driver.Value{}); err != nil {
-			return errors.New("failed to set key pragma")
-		}
-
-		if _, err = conn.Exec(fmt.Sprintf("PRAGMA kdf_iter = '%d'", KdfIterationsNumber), []driver.Value{}); err != nil {
-			return err
-		}
-
-		// readers do not block writers and faster i/o operations
-		if _, err = conn.Exec("PRAGMA journal_mode=WAL", []driver.Value{}); err != nil {
-			return err
-		}
-
-		// workaround to mitigate the issue of "database is locked" errors during concurrent write operations
-		if _, err = conn.Exec("PRAGMA busy_timeout=60000", []driver.Value{}); err != nil {
-			return err
-		}
-
-		return nil
-	}
 
 	return db, nil
 }
