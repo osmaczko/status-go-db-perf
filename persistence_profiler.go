@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -16,7 +15,7 @@ type PersistenceProfiler struct {
 }
 
 func NewPersistenceProfiler(p *Persistence) (*PersistenceProfiler, error) {
-	csvFile, err := os.Create("perf-" + fmt.Sprint(time.Now().Unix()) + ".csv")
+	csvFile, err := os.Create("output/perf-" + fmt.Sprint(time.Now().Unix()) + ".csv")
 	if err != nil {
 		return nil, err
 	}
@@ -32,24 +31,14 @@ func (pp *PersistenceProfiler) Cleanup() {
 }
 
 func (pp *PersistenceProfiler) Perform() error {
-	// log exclusive query
-	if _, err := pp.queryUnseenMessages(); err != nil {
-		return err
-	}
-
-	// log exclusive insert
-	if err := pp.insertUnseenMessage(); err != nil {
-		return err
-	}
-
 	// log concurrent reading and writing
 	wg := sync.WaitGroup{}
 	errCh := make(chan error)
 	go func() {
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
-				time.Sleep(time.Duration(200+rand.Intn(500)) * time.Millisecond)
+				time.Sleep(time.Duration(10) * time.Millisecond)
 				defer wg.Done()
 				if _, err := pp.queryUnseenMessages(); err != nil {
 					errCh <- fmt.Errorf("queryUnseenMessages failed: %v", err)
@@ -57,10 +46,10 @@ func (pp *PersistenceProfiler) Perform() error {
 			}()
 		}
 
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 100; i++ {
 			wg.Add(1)
 			go func() {
-				time.Sleep(time.Duration(50+rand.Intn(100)) * time.Millisecond)
+				time.Sleep(time.Duration(1) * time.Millisecond)
 				defer wg.Done()
 				if err := pp.insertUnseenMessage(); err != nil {
 					errCh <- fmt.Errorf("insertUnseenMessage failed: %v", err)

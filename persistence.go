@@ -5,8 +5,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"log"
-	"sync/atomic"
 
 	sqlcipher "github.com/mutecomm/go-sqlcipher" // We require go sqlcipher that overrides default implementation
 )
@@ -20,14 +18,13 @@ const (
 )
 
 var insertMessageIdx = 0
-var connectionsIdx int32
 
 type Persistence struct {
 	db *sql.DB
 }
 
-func NewPersistence(path string, key string) (*Persistence, error) {
-	db, err := openDB(path, key)
+func NewPersistence(path string, key string, maxOpenConns int, maxIdleConns int) (*Persistence, error) {
+	db, err := openDB(path, key, maxOpenConns, maxIdleConns)
 	return &Persistence{
 		db: db,
 	}, err
@@ -37,11 +34,14 @@ func (p *Persistence) Cleanup() {
 	p.db.Close()
 }
 
-func openDB(path string, key string) (*sql.DB, error) {
+func openDB(path string, key string, maxOpenConns int, maxIdleConns int) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, err
 	}
+
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
 
 	// Workaround: casting the driver type breaks the database/sql abstraction
 	// and may lead to compatibility issues in the future.
@@ -54,33 +54,27 @@ func openDB(path string, key string) (*sql.DB, error) {
 	}
 	sqlcipherDriver.ConnectHook = func(conn *sqlcipher.SQLiteConn) error {
 		if _, err = conn.Exec("PRAGMA foreign_keys=ON", []driver.Value{}); err != nil {
-			log.Println("Connection setup FAILED")
 			return err
 		}
 		keyString := fmt.Sprintf("PRAGMA key = '%s'", key)
 		if _, err = conn.Exec(keyString, []driver.Value{}); err != nil {
-			log.Println("Connection setup FAILED")
 			return errors.New("failed to set key pragma")
 		}
 
 		if _, err = conn.Exec(fmt.Sprintf("PRAGMA kdf_iter = '%d'", KdfIterationsNumber), []driver.Value{}); err != nil {
-			log.Println("Connection setup FAILED")
 			return err
 		}
 
 		// readers do not block writers and faster i/o operations
 		if _, err = conn.Exec("PRAGMA journal_mode=WAL", []driver.Value{}); err != nil {
-			log.Println("Connection setup FAILED")
 			return err
 		}
 
 		// workaround to mitigate the issue of "database is locked" errors during concurrent write operations
 		if _, err = conn.Exec("PRAGMA busy_timeout=60000", []driver.Value{}); err != nil {
-			log.Println("Connection setup FAILED")
 			return err
 		}
 
-		log.Println("Connection setup: ", atomic.AddInt32(&connectionsIdx, 1))
 		return nil
 	}
 
