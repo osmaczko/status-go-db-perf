@@ -75,8 +75,8 @@ func main() {
 	}
 	defer csvFile.Close()
 
-	for i := 1; i <= 20; i++ {
-		for j := 1; j <= i; j++ {
+	for i := 1; i <= 20; i = i + 4 {
+		for j := 1; j <= i; j = j + 4 {
 			result, err := profile(*dbPath, *key, i, j)
 			if err != nil {
 				log.Println(err)

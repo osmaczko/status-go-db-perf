@@ -38,7 +38,7 @@ func (pp *PersistenceProfiler) Perform() error {
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
-				time.Sleep(time.Duration(10) * time.Millisecond)
+				time.Sleep(time.Duration(100) * time.Millisecond)
 				defer wg.Done()
 				if _, err := pp.queryUnseenMessages(); err != nil {
 					errCh <- fmt.Errorf("queryUnseenMessages failed: %v", err)
@@ -46,10 +46,10 @@ func (pp *PersistenceProfiler) Perform() error {
 			}()
 		}
 
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func() {
-				time.Sleep(time.Duration(1) * time.Millisecond)
+				time.Sleep(time.Duration(100) * time.Millisecond)
 				defer wg.Done()
 				if err := pp.insertUnseenMessage(); err != nil {
 					errCh <- fmt.Errorf("insertUnseenMessage failed: %v", err)
